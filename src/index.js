@@ -9,5 +9,5 @@ heading.textContent = 'Hello Webpack!';
 app.appendChild(heading);
 
 const paragraph = document.createElement('p');
-paragraph.textContent = '这是一个基于webpack的简单项目。';
+paragraph.textContent = '这是一个基于webpa1ck的简单项目。';
 app.appendChild(paragraph);
