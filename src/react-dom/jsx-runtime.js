@@ -1,5 +1,6 @@
 export const Fragment = Symbol.for('react.self.fragment');
 
+// 将JSX转成VNode结构
 export function jsx(type, props, key) {
   const p = props || {};
   const { children, ...rest } = p;

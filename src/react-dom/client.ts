@@ -1,3 +1,4 @@
+import { beginComponent, endComponent, setRenderScheduler } from '../react/reactHooks';
 // Minimal createRoot inspired by React 18 API shape
 // Provides a Root with render/unmount methods and basic container validation.
 // 中文说明：一个仿 React 18 的极简 createRoot 实现，提供 render/unmount，并做基本容器校验与 vNode 渲染。
@@ -42,34 +43,39 @@ class ReactDOMRoot {
   private disposed = false; // 是否已卸载（标记）
   private identifierPrefix: string; // 标识符前缀（可用于生成唯一 id）
   private isStrictMode: boolean; // 是否启用严格模式（仅标记）
+  private lastChildren: any; // 最近一次渲染的根 children
 
   // 中文：记录容器与配置；strictMode 在本实现中仅作标记用途
   constructor(container: Container, opts?: CreateRootOptions) {
     this.container = container;
     this.identifierPrefix = opts?.identifierPrefix ?? '';
     this.isStrictMode = !!opts?.unstable_strictMode;
+    // 注册全局调度器：在 setState 被调用时触发本根的重新渲染
+    setRenderScheduler(() => {
+      if (!this.disposed) {
+        this.render(this.lastChildren);
+      }
+    });
   }
 
   /**
    * 中文：渲染入口。清空目标，再以宽松方式挂载 children（支持多种类型）
    * JSX 元素会被转换为 vNode 再渲染
    */
-  render(children: any) {
-      console.dir(children,'children')
+  render(children: VNode|string|number|null) {
     if (this.disposed) return;
+    this.lastChildren = children;
 
     // 中文：Document 使用 body 或 documentElement 作为挂载目标，否则直接用传入容器
     const target: Element | DocumentFragment =
       this.container.nodeType === Node.DOCUMENT_NODE
         ? (this.container as Document).body || (this.container as Document).documentElement
         : (this.container as Element | DocumentFragment);
-
-        console.dir(target,'target')
-
+        // console.log(target,'target1111')
     // 中文：渲染前先清空容器内容
     while (target.firstChild) target.removeChild(target.firstChild);
-
     // 中文：入口挂载调用，递归处理不同类型的 children
+    // 这里只保留最外层的<div id="app"></div>
     appendChildFlexible(target, children);
   }
 
@@ -95,8 +101,11 @@ class ReactDOMRoot {
  * - vNode 对象：调用 createDomFromVnode
  * - 其他类型：作为文本处理
  */
-function appendChildFlexible(parent: Element | DocumentFragment, child: any) {
+function appendChildFlexible(parent: Element | DocumentFragment, child: VNode|string|number|null|Node) {
+  // console.log(parent ,'开始执行appendChildFlexible 获取parent')
+  // console.log(child ,'开始执行appendChildFlexible 获取child')
   if (child == null) return;
+  // 中文：直接 appendChild 节点
   if (child instanceof Node) {
     parent.appendChild(child);
     return;
@@ -109,7 +118,9 @@ function appendChildFlexible(parent: Element | DocumentFragment, child: any) {
     for (const c of child) appendChildFlexible(parent, c);
     return;
   }
+  // 中文：递归处理 vNode 对象（递归调用 appendChildFlexible）
   if (typeof child === 'object' && child && 'type' in child) {
+    // 这里将vnode转换成node
     const node = createDomFromVnode(child as VNode);
     if (node) parent.appendChild(node);
     return;
@@ -136,7 +147,6 @@ export type VNode = {
  */
 function createDomFromVnode(vnode: VNode): Node | null {
     try {
-        // 中文：自定义 Fragment 标识，与 Babel 自动运行时输出保持一致
         const FRAGMENT = Symbol.for('react.self.fragment');
         const type: any = vnode.type;
         const props = vnode.props || {};
@@ -155,7 +165,13 @@ function createDomFromVnode(vnode: VNode): Node | null {
 
         // 中文：函数组件：执行得到返回值并转换为 Node
         if (typeof type === 'function') {
-            const rendered = type({ ...props, children });
+            beginComponent(vnode as any);
+            let rendered: any;
+            try {
+                rendered = type({ ...props, children });
+            } finally {
+                endComponent();
+            }
             if (rendered instanceof Node) return rendered;
             if (typeof rendered === 'object' && rendered && 'type' in rendered) {
                 return createDomFromVnode(rendered as any);
@@ -171,7 +187,7 @@ function createDomFromVnode(vnode: VNode): Node | null {
             } else if (key.startsWith('on') && typeof value === 'function') {
                 const event = key.slice(2).toLowerCase();
                 el.addEventListener(event, value as any);
-            } else if (value != null) {
+            } else if (value != null) { 
                 el.setAttribute(key, String(value));
             }
         }
@@ -197,7 +213,7 @@ export const createRoot = (
   container: Container,
   options?: CreateRootOptions,
 ) => {
-  console.log(container,'container',options,'options')
+  // console.log(container,'container',options,'options')
   if (!isValidContainer(container)) {
     throw new Error('Target container is not a DOM element.');
   }
